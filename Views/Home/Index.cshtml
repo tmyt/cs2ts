@@ -1,0 +1,26 @@
+﻿@{
+    ViewData["Title"] = "cs2ts";
+}
+@model cs2ts.Models.HomeModel
+
+<div class="text-center">
+    <form method="post" id="form">
+        <div class="p-3">
+            <textarea class="form-control" asp-for="@Model.Source" rows="12"></textarea>
+        </div>
+        <button class="btn btn-outline-primary" type="submit">analyze</button>
+    </form>
+    <hr />
+    @if (Model.Warnings.Count > 0)
+    {
+        <div class="alert alert-warning">
+            <ul>
+                @foreach (var s in Model.Warnings)
+                {
+                    <li>@s</li>
+                }
+            </ul>
+        </div>
+    }
+    <pre>@Model.Generated</pre>
+</div>
