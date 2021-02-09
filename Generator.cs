@@ -17,6 +17,7 @@ namespace cs2ts
 
         public string Generate(string source)
         {
+            if (string.IsNullOrEmpty(source)) return "";
             var tree = CSharpSyntaxTree.ParseText(source);
             var root = tree.GetCompilationUnitRoot();
             var gen = Parse(root.Members);
