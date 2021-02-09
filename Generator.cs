@@ -175,6 +175,7 @@ namespace cs2ts
                 {
                     case "String":
                     case "DateTime":
+                    case "Guid":
                         return "string";
                     case "dynamic":
                         return "any";
