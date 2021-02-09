@@ -11,7 +11,7 @@
         <button class="btn btn-outline-primary" type="submit">analyze</button>
     </form>
     <hr />
-    @if (Model.Warnings.Count > 0)
+    @if (Model.Warnings?.Count > 0)
     {
         <div class="alert alert-warning">
             <ul>
