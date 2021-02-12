@@ -33,7 +33,9 @@ namespace cs2ts
 
         private string Parse(SyntaxList<MemberDeclarationSyntax> members)
         {
-            return members.Select(ParseOne).JoinToString("\n");
+            return members.Select(ParseOne)
+                .Where(s => !string.IsNullOrEmpty(s))
+                .JoinToString("\n");
         }
 
         private string ParseOne(MemberDeclarationSyntax syntax)
@@ -52,6 +54,11 @@ namespace cs2ts
 
         private string ParseTypeDeclaration(TypeDeclarationSyntax syntax)
         {
+            // suppress code generation for attribute class
+            if (syntax is ClassDeclarationSyntax cls && IsAttributeClassDeclaration(cls))
+            {
+                return "";
+            }
             var segment = $"export type {syntax.Identifier.Text}{ParseTypeParameters(syntax.TypeParameterList)} = {{\n";
             foreach (var member in syntax.Members)
             {
@@ -253,6 +260,16 @@ namespace cs2ts
             var content = node.GetText().ToString().Trim();
             Warnings.Add($"(Line: {pos.Line}:{pos.Character}): Could not recognize {content}");
             return $"<???> /* @{pos.Line}:{pos.Character} {content} */";
+        }
+
+        private bool IsAttributeClassDeclaration(ClassDeclarationSyntax syntax)
+        {
+            if (syntax.BaseList == null) return false;
+            var hasAttribute = syntax.BaseList.Types
+                .Select(type => type.Type)
+                .OfType<IdentifierNameSyntax>()
+                .Any(type => type.Identifier.Text == "Attribute");
+            return syntax.Identifier.Text.EndsWith("Attribute") && hasAttribute;
         }
     }
 
