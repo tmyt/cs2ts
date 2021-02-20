@@ -7,6 +7,8 @@ namespace cs2ts.Models
     {
         [BindProperty]
         public string Source { get; set; }
+        public string Enums { get; set; }
+        public string TypeMap { get; set; }
         public string Generated { get; set; }
         public List<string> Warnings { get; set; }
     }

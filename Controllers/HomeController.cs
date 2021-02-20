@@ -41,7 +41,7 @@ namespace cs2ts.Controllers
         public IActionResult Raw(HomeModel model)
         {
             var gen = new Generator();
-            var generated = gen.Generate(model.Source);
+            var generated = gen.Generate(model.Source, model.TypeMap, model.Enums);
             Response.Headers.Add("X-Generator-Warnings", gen.Warnings
                 .Select(s => $"\"{s}\"")
                 .JoinToString(","));

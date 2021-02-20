@@ -15,9 +15,29 @@ namespace cs2ts
 
         private readonly List<string> _context = new List<string>();
 
-        public string Generate(string source)
+        private readonly Dictionary<string, string> _knownTypeMap = new Dictionary<string, string>();
+        private readonly List<string> _knownEnums = new List<string>();
+        private readonly Dictionary<string, string> _enumModes = new Dictionary<string, string>();
+
+        public string Generate(string source, string typeMap = "", string enums = "")
         {
             if (string.IsNullOrEmpty(source)) return "";
+            foreach (var map in enums.Split(","))
+            {
+                if (string.IsNullOrEmpty(map)) continue;
+                var keyvalue = map.Split(':');
+                _knownEnums.Add(keyvalue[0]);
+                if (keyvalue.Length > 1)
+                {
+                    _enumModes[keyvalue[0]] = keyvalue[1];
+                }
+            }
+            foreach (var map in typeMap.Split(","))
+            {
+                if (string.IsNullOrEmpty(map)) continue;
+                var keyvalue = map.Split("=");
+                _knownTypeMap.Add(keyvalue[0], keyvalue[1]);
+            }
             var tree = CSharpSyntaxTree.ParseText(source);
             var root = tree.GetCompilationUnitRoot();
             var gen = Parse(root.Members);
@@ -25,7 +45,9 @@ namespace cs2ts
                 .Where(s => !_exports.Contains(s))
                 .OrderBy(s => s)
                 .Distinct()
-                .Select(type => $"import {{ {type} }} from './{type}';")
+                .Select(type => _knownTypeMap.ContainsKey(type)
+                    ? $"import {{ {type} }} from '{_knownTypeMap[type]}';"
+                    : $"import {{ {type} }} from './{type}';")
                 .ToArray();
             var imports = sortedImports.JoinToString("\n");
             return sortedImports.Length == 0 ? gen : $"{imports}\n\n{gen}";
@@ -59,12 +81,18 @@ namespace cs2ts
             {
                 return "";
             }
+            // suppress code generation for static class
+            if (syntax.Modifiers.Any(mod => mod.Kind() == SyntaxKind.StaticKeyword))
+            {
+                return "";
+            }
             var segment = $"export type {syntax.Identifier.Text}{ParseTypeParameters(syntax.TypeParameterList)} = {{\n";
             foreach (var member in syntax.Members)
             {
                 if (!(member is PropertyDeclarationSyntax prop)) continue;
                 if (prop.Modifiers.Any(mod => mod.Kind() == SyntaxKind.OverrideKeyword)) continue;
-                if (prop.Modifiers.All(mod => mod.Kind() != SyntaxKind.PublicKeyword)) continue;
+                if (prop.Modifiers.Any(mod => mod.Kind() == SyntaxKind.StaticKeyword)) continue;
+                if (!(syntax is InterfaceDeclarationSyntax) && prop.Modifiers.All(mod => mod.Kind() != SyntaxKind.PublicKeyword)) continue;
                 segment += $"  {CamelCase(prop.Identifier.Text)}{ParseNullable(prop.Type)}: {ParseType(prop.Type)};\n";
             }
             segment += $"}}{ParseExtendsSyntax(syntax.BaseList)};\n";
@@ -97,12 +125,23 @@ namespace cs2ts
 
         private string ParseEnum(EnumDeclarationSyntax syntax)
         {
-            var segment = $"export enum {syntax.Identifier.Text} {{\n";
+            var name = syntax.Identifier.Text;
+            var modeKeyof = false;
+            if (_enumModes.ContainsKey(name) && _enumModes[name] == "keyof")
+            {
+                modeKeyof = true;
+                name += "Enum";
+            }
+            var segment = $"export enum {name} {{\n";
             foreach (var member in syntax.Members)
             {
                 segment += $"  {member.Identifier.Text}{ParseEnumValue(member.EqualsValue)},\n";
             }
             segment += "}\n";
+            if (modeKeyof)
+            {
+                segment += $"export type {syntax.Identifier.Text} = Uncapitalize<keyof typeof {name}>;\n";
+            }
             _exports.Add(syntax.Identifier.Text);
             return segment;
         }
@@ -119,6 +158,8 @@ namespace cs2ts
             {
                 case LiteralExpressionSyntax literal:
                     return ParseLiteral(literal);
+                case PrefixUnaryExpressionSyntax unary:
+                    return ParsePrefixUnary(unary);
                 case BinaryExpressionSyntax binary:
                     return ParseBinary(binary);
                 case ParenthesizedExpressionSyntax parenthesized:
@@ -144,6 +185,18 @@ namespace cs2ts
                     return "false";
                 case SyntaxKind.TrueLiteralExpression:
                     return "true";
+            }
+            return ParseUnknown(syntax);
+        }
+
+        private string ParsePrefixUnary(PrefixUnaryExpressionSyntax syntax)
+        {
+            switch (syntax.Kind())
+            {
+                case SyntaxKind.UnaryPlusExpression:
+                    return $"+{ParseExpression(syntax.Operand)}";
+                case SyntaxKind.UnaryMinusExpression:
+                    return $"-{ParseExpression(syntax.Operand)}";
             }
             return ParseUnknown(syntax);
         }
@@ -201,7 +254,11 @@ namespace cs2ts
                     case "IEnumerable":
                         return $"{ParseType(args[0])}[]";
                     case "Dictionary":
-                        return $"{{ [ key: {ParseType(args[0])} ]: {ParseType(args[1])} }}";
+                        {
+                            var type = ParseType(args[0]);
+                            var delim = _knownEnums.Contains(type) ? " in " : ": ";
+                            return $"{{ [ key{delim}{type} ]: {ParseType(args[1])} }}";
+                        }
                 }
                 _imports.Add(generic.Identifier.Text);
                 return $"{generic.Identifier.Text}<{generic.TypeArgumentList.Arguments.Select(ParseType).JoinToString(", ")}>";
