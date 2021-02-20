@@ -37,6 +37,17 @@ namespace cs2ts.Controllers
             return View(model);
         }
 
+        [HttpPost("/raw")]
+        public IActionResult Raw(HomeModel model)
+        {
+            var gen = new Generator();
+            var generated = gen.Generate(model.Source);
+            Response.Headers.Add("X-Generator-Warnings", gen.Warnings
+                .Select(s => $"\"{s}\"")
+                .JoinToString(","));
+            return Content(generated, "text/plain");
+        }
+
         public IActionResult Privacy()
         {
             return View();
