@@ -86,13 +86,17 @@ namespace cs2ts
             {
                 return "";
             }
-            var segment = $"export type {syntax.Identifier.Text}{ParseTypeParameters(syntax.TypeParameterList)} = {{\n";
+
+            var segment = "";
+            segment += ParseTrivia(syntax.GetLeadingTrivia());
+            segment += $"export type {syntax.Identifier.Text}{ParseTypeParameters(syntax.TypeParameterList)} = {{\n";
             foreach (var member in syntax.Members)
             {
                 if (!(member is PropertyDeclarationSyntax prop)) continue;
                 if (prop.Modifiers.Any(mod => mod.Kind() == SyntaxKind.OverrideKeyword)) continue;
                 if (prop.Modifiers.Any(mod => mod.Kind() == SyntaxKind.StaticKeyword)) continue;
                 if (!(syntax is InterfaceDeclarationSyntax) && prop.Modifiers.All(mod => mod.Kind() != SyntaxKind.PublicKeyword)) continue;
+                segment += IndentString(ParseTrivia(member.GetLeadingTrivia()), "  ");
                 segment += $"  {CamelCase(prop.Identifier.Text)}{ParseNullable(prop.Type)}: {ParseType(prop.Type)};\n";
             }
             segment += $"}}{ParseExtendsSyntax(syntax.BaseList)};\n";
@@ -132,9 +136,13 @@ namespace cs2ts
                 modeKeyof = true;
                 name += "Enum";
             }
-            var segment = $"export enum {name} {{\n";
+            var segment = "";
+            segment += ParseTrivia(syntax.GetLeadingTrivia());
+            // lead
+            segment += $"export enum {name} {{\n";
             foreach (var member in syntax.Members)
             {
+                segment += IndentString(ParseTrivia(member.GetLeadingTrivia()), "  ");
                 segment += $"  {member.Identifier.Text}{ParseEnumValue(member.EqualsValue)},\n";
             }
             segment += "}\n";
@@ -144,6 +152,59 @@ namespace cs2ts
             }
             _exports.Add(syntax.Identifier.Text);
             return segment;
+        }
+
+        private string ParseTrivia(SyntaxTriviaList trivia)
+        {
+            string segment = "";
+            if (trivia.Count == 0) return "";
+            foreach (var t in trivia)
+            {
+                switch (t.Kind())
+                {
+                    case SyntaxKind.SingleLineDocumentationCommentTrivia:
+                    case SyntaxKind.MultiLineDocumentationCommentTrivia:
+                        segment += ParseDocumentationCommentTrivia(t) + "\n";
+                        continue;
+                    default:
+                        continue;
+                }
+            }
+            return segment;
+        }
+
+        private string ParseDocumentationCommentTrivia(SyntaxTrivia syntax)
+        {
+            var elements = syntax
+                .GetStructure()
+                ?.DescendantNodes()
+                .Where(t => t.Kind() == SyntaxKind.XmlElement)
+                .OfType<XmlElementSyntax>()
+                .ToArray();
+            var e = elements
+                ?.FirstOrDefault(t => t.StartTag.Name.LocalName.Text == "summary");
+            if (e == null) return "";
+            var texts = e.Content.OfType<XmlTextSyntax>()
+                .Select(t => t.TextTokens)
+                .SelectMany(u => u)
+                .Select(t => t.Text)
+                .JoinToString("");
+            var comments = texts
+                .Trim()
+                .Split('\n')
+                .Select(s => s.Trim())
+                .Select(s => " * " + s)
+                .JoinToString("\n");
+            return "/**\n" + comments + "\n */";
+        }
+
+        private string IndentString(string text, string indent)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "";
+            return text.Split('\n')
+                .Select(s => indent + s)
+                .Select(s => s.TrimEnd())
+                .JoinToString("\n");
         }
 
         private string ParseEnumValue(EqualsValueClauseSyntax syntax)
